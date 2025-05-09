@@ -24,6 +24,18 @@ def get_face_embedding(image_input):
     else:
         raise ValueError("Unsupported image input type.")
 
+    # Ensure image is uint8
+    if image.dtype != np.uint8:
+        image = (255 * image).astype(np.uint8) if image.max() <= 1.0 else image.astype(np.uint8)
+
+    # Ensure image is 3-channel RGB
+    if image.ndim == 2:
+        # Grayscale -> RGB
+        image = np.stack((image,) * 3, axis=-1)
+    elif image.shape[2] == 4:
+        # RGBA -> RGB
+        image = image[:, :, :3]
+
     face_locations = face_recognition.face_locations(image)
     if not face_locations:
         return []

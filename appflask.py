@@ -5,7 +5,8 @@ import uuid
 import sys
 import base64
 from io import BytesIO
-from PIL import Image
+from PIL import Image, ImageOps
+import numpy as np
 from urllib.parse import unquote
 import mimetypes
 
@@ -38,13 +39,20 @@ def upload_file():
         # Handle webcam image (base64)
         image_base64 = request.form.get("image_base64")
         if image_base64:
+            if "," not in image_base64:
+                return render_template('index.html', message="Invalid base64 image format", error=True, matches=[])
+            
             header, encoded = image_base64.split(",", 1)
             image_data = base64.b64decode(encoded)
-            image = Image.open(BytesIO(image_data)).convert("RGB")
+            image = Image.open(BytesIO(image_data))
+            image = ImageOps.exif_transpose(image).convert("RGB")  # Auto-fix orientation
+            image_np = np.array(image).astype(np.uint8)
+
+            # Save temp image (optional step for logging/debugging)
             unique_filename = f"{uuid.uuid4()}.png"
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(unique_filename))
-            image.save(file_path)
-
+            Image.fromarray(image_np).save(file_path)
+        
         # Handle file upload
         elif 'image' in request.files and request.files['image'].filename != '':
             file = request.files['image']
@@ -58,11 +66,13 @@ def upload_file():
         else:
             return render_template('index.html', message="No image or capture provided", error=True, matches=[])
 
-        # Process image
-        reference_embedding = get_face_embedding(file_path)
-        os.remove(file_path)  # Clean up temp file
+        # Pass the image array (if base64) or file path (if file) to embedding generator
+        reference_embedding = get_face_embedding(image_np if image_base64 else file_path)
 
-        if reference_embedding is None:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+
+        if reference_embedding is None or len(reference_embedding) == 0:
             return render_template('index.html', message="No face detected in the image!", error=True, matches=[])
 
         matches = find_matching_media(reference_embedding)
